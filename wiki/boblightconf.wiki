@@ -1,0 +1,313 @@
+#summary Explanation of the boblight.conf config file for boblightd.
+
+= Introduction =
+
+[boblightd] needs a config file so it knows what to do at startup, the default file it tries to open is /etc/boblight.conf.
+
+= Details =
+
+boblight.conf has 4 different type of sections: [boblightconf#global [global]], [boblightconf#device [device]], [boblightconf#color [color]] and [boblightconf#light [light]].
+
+== global ==
+A `[global]` section has two settings: interface and port.<br>
+You can specify as many global settings as you want, although there's no point in having more than one.
+
+Interface specifies where to bind the listening tcp socket, if interface is not specified boblightd will bind to all interfaces (INADDR_ANY) by default, for safety reasons you should bind to interface 127.0.0.1 if you don't plan to use boblight over a network.
+
+Port specifies to which port the tcp socket will bind (who would have guessed), if no port is specified boblightd will bind to port 19333 by default.
+
+Example `[global]` section:
+{{{
+[global]
+interface 127.0.0.1
+port      19333
+}}}
+
+== device ==
+
+A `[device]` section specifies a device for boblightd, it has the following settings:<br>
+
+ * name<br>Specifies the name of the device, this setting is mandatory and must be unique (you can't have two devices with the same name).
+
+ * type<br>Specifies the type of the device, this setting is mandatory.<br>Possible values are ltbl, momo, atmo, sound, popen, dioder, karate, ibelight, sedu, lpd8806 and ws2801.
+
+ * output<br>Specifies where the device has its output, this setting is mandatory except for ibelight devices.<br>For ltbl, momo, atmo, dioder and karate devices this is a serial port (/dev/ttyS0), for sound devices this is api:device (ALSA:default), for popen devices this is something that can be executed (dd of=/dev/null), for lpd8806 and ws2801 devices, this is the spi device node (/dev/spidev0.0).<br>This line is parsed from the first whitespace after the word output to the end of the line, including any comments and trailing whitespace!
+
+ * channels<br>Specifies the number of channels the device has, this setting is mandatory.
+
+ * interval<br>Specifies the update interval in microseconds for all device types except sound, this setting is mandatory for those devices.<br>A good value seems to be 20000 to update 50 times per second.<br>Clients can also request updates of the devices when they send light input so this value doesn't have to be very low to get good synchronization.
+
+ * prefix<br>Specifies a prefix in hex sent before each burst of rgb information, this setting is optional and only applies to momo devices.
+
+ * postfix<br>Specifies a postfix in hex sent after each burst of rgb information, this setting is optional and only applies to momo devices.
+
+ * rate<br>Specifies the baudrate for momo, atmo, ltbl, dioder, karate, SEDU, lpd8806 and ws2801 devices, specifies the samplerate for sound devices. this setting is mandatory for those devices.
+
+ * bits<br>Specifies the number of bits per channel, this only applies to momo, atmo and karate devices, this setting is optional, the default is 8.<br>Boblight will only send the number of bytes needed to hold the number of bits, in big endian format, so for 1 to 8 bits it will send one byte, for 9 to 16 it will send two etc.
+
+ * max<br>This is the same as the bits value, except you specify the maximum output value, so that you're not limited to bits^2-1.<br>This setting is optional, the default is 255.
+
+ * period<br>Specifies the period in samples for sound devices, in other words how many samples are written per iteration, this setting is mandatory.<br>A good value for a samplerate of 48000 is 1024, this updates the output 46.875 times per second.
+
+ * latency<br>Specifies the latency for sound devices in microseconds, this setting is optional.<br>If this is not specified the default portaudio low output latency is used (whatever that is, it seems pretty low anyway).
+
+ * allowsync<br>Allows sync mode when a client requests it, this setting is optional, the default is on.<br>When sync mode is on, a device gets woken up immediately when a client sends input to a light that that device is using, this works quite well with clients like boblight-X11 and boblight-v4l because the light updates are exactly synchronized to the client's input.<br>However when a client updates too frequently or too many clients are using one device, the device's output can become constipated and all hell will break loose.<br>Sync mode can also be disabled in boblight-X11 or boblight-v4l by using the "-y off "flags.<br>Sync mode doesn't work with sound devices, they run synchronized to the soundcard and can't be woken up early.<br>
+
+ * debug<br>Turns on debug mode for the device, this setting is optional, the default is off.<br>For momo, atmo, dioder, ltbl and karate devices any data that is written to the serial port or read from the serial port is printed as hex to stdout, for popen devices the float data is written to stdout. For ibelight devices it prints the data sent and received over usb, and it sets the libusb debug level to 3.<br>
+
+ * delayafteropen<br>Delays writing to the device for n microseconds after opening, this setting is optional and only applies to momo, atmo, karate, dioder, popen and LTBL devices, the default is 0 (no delay).<br>Useful for arduino devices who get reset after opening the serial port for the first time (because DTR is driven low), a value of 1000000 for a 1 second delay seems to work ok.<br>
+
+ * bus<br>Specifies the usb bus number of the device, this setting is optional and only applies to ibelight devices, when this setting is not present, boblightd will use the first ibelight device it finds, if the address setting it present it will only use a devices with that address.
+
+ * address<br>Specifies the usb address of the device, this setting is optional and only applies to ibelight devices, when this setting is not present, boblightd will use the first ibelight device it finds, if the bus setting is present it will only use a device with that bus number.<br><br>The bus and address settings can be used together to select a specific ibelight device, this is useful if you have multiple ibelight devices, if you don't know the bus and address of the device, just leave them out, boblightd will print any ibelight devices it finds to its logfile, after that you can enter them in boblight.conf and restart boblightd.
+
+ * threadpriority<br>When this is set, it sets the scheduler of the device thread to SCHED_FIFO, and the number after it specifies the priority of the thread. The minimum and maximum values are determined by sched_get_priority_min() and sched_get_priority_max(), usual values for linux are 1 and 99. Setting this value will improve timing of the device thread.<br>It is highly recommended that you set this to 99 when using a ws2801 device, because the ws2801 latches in data when the clock pin has been low for more than 500 microseconds, which might cause flicker when the boblightd device thread gets preempted during an spi write.<br><br>In order to use this, the user you run boblightd as must have permissions to use SCHED_FIFO priority, the easiest way to accomplish this is to run boblightd as root, but this is not recommended (however it's convenient for testing).<br><br>If you want to give just your user SCHED_FIFO permissions, you can add this line to /etc/security/limits.conf:<br>user   -  rtprio     99<br>However this only works for PAM login shells, it will not work in a boot script.<br><br>If you want to use SCHED_FIFO in boblightd, and run boblightd as a regular user, you can use this in your boot script:<br>ulimit -r 99<br>sudo -u user /usr/local/bin/boblightd<br>For this to work the boot script has to run as root.
+
+Example `[device]` sections:
+
+{{{
+#ltbl device with 3 channels on /dev/ttyUSB0, baudrate of 115k2 and updated 50 times per second (20000 microseconds, 1/50 seconds).
+
+[device]
+name 		device1
+output		/dev/ttyUSB0
+channels	3
+type		ltbl
+interval	20000
+rate            115200
+allowsync       on
+debug           off #turn this on to see what it's doing with the serial port
+}}}
+
+{{{
+#momo device with 12 channels, FF prefix and 19k2 baudrate
+
+[device]
+name 		device1
+output		/dev/ttyACM0
+channels	12
+type		momo
+interval	20000
+prefix          FF
+rate            19200
+}}}
+
+{{{
+#popen device dumping everything to /dev/null
+
+[device]
+name 		device1
+output		dd bs=1 > /dev/null 2>&1
+channels	6
+type		popen
+interval	20000
+}}}
+
+{{{
+#sound device using the default alsa output
+
+[device]
+name		device1
+output		ALSA:default
+channels	6
+type		sound
+latency		20000
+period		1024
+rate		48000
+}}}
+
+{{{
+#ltbl device with 3 channels and 115k2 baudrate
+
+[device]
+name 		device1
+output		/dev/ttyUSB0
+channels	3
+type		ltbl
+interval	20000
+rate            115200
+}}}
+
+{{{
+#dioder device from http://cauldrondevelopment.com/blog/2009/12/29/a-real-ikea-dioder-hack/
+
+[device]
+name		device1
+output		/dev/ttyUSB0
+channels	3
+type		dioder
+interval	20000
+rate		38400
+}}}
+
+== color ==
+A `[color]` section specifies a color for boblightd, it has 5 settings:
+
+ * name<br>Specifies the name of the color, this setting is mandatory and must be unique (you can't have two colors with the same name.
+
+ * rgb<br>Specifies the rgb value of this color, this setting is mandatory, it's in RRGGBB hex format.
+
+ * gamma<br>Specifies the gamma for this color, this setting is optional, the default is 1.0.
+
+ * adjust<br>Specifies the adjust for this color, this setting is optional, the default is 1.0.<br>This is a multiplier for the channel this color is on, the ranges goes from 0.0 to 1.0.
+
+ * blacklevel<br>Specifies the blacklevel for this color, this setting is optional, the default is 0.0.<br>This setting is a minimum value for the channel this color is on, the range goes from 0.0 to 1.0.
+
+Example color sections:
+
+{{{
+[color]
+name		red
+rgb		FF0000
+
+[color]
+name		green
+rgb		00FF00
+
+[color]
+name		blue
+rgb		0000FF
+
+[color]
+name		yellow
+rgb		FFFF00
+adjust		0.5
+blacklevel	0.1
+gamma		2.3
+
+[color]
+name		white
+rgb		FFFFFF
+adjust		0.3
+blacklevel	0.7
+gamma		1.6
+}}}
+
+== light ==
+
+A `[light]` section specifies a light for boblightd, it has 4 settings:
+
+ * name<br>Specifies the name of this light, this setting is mandatory and must be unique (you can't have two lights with the same name).
+
+ * color<br>Specifies a color on this light, this setting is optional, you can specify as many colors as this light has.<br>The synax is color colorname devicename devicechannel.<br>Example: color red device1 1
+
+ * hscan<br>Specifies the horizontal scanrange for this light, this setting is optional, the default is 0.0 100.0<br>This setting only has an effect for clients that react to an image like boblight-X11 and boblight-v4l. The syntax is hscan begin end.<br>Begin and end specify the percentage of the horizontal range the light should react to. Example: hscan 0.0 50.0
+
+ * vscan<br>Specifies the vertical scanrange for this light, same as hscan.
+
+Example light sections:
+
+{{{
+[light]
+name		right
+color		red 	device1 1
+color		green 	device1 2
+color		blue 	device1 3
+hscan		50 100
+vscan		0 100
+
+[light]
+name		left
+color		red     device1 4
+color		green   device1 5
+color		blue    device1 6
+hscan		0 50
+vscan		0 100
+
+[light]
+name		center
+color		red     device1 7
+color		green   device1 8
+color		blue    device1 9
+hscan		33.3 66.6
+vscan		33.3 66.6
+
+[light]
+name		top
+color		red     device1 7
+color		green   device1 8
+color		blue    device1 9
+hscan		0.0 100.0
+vscan		0.0 50.0
+}}}
+
+== example configuration files ==
+
+{{{
+#single light on a 3 channel ltbl device
+
+[global]
+interface	127.0.0.1
+
+[device]
+name 		device1
+output		/dev/ttyUSB0
+channels	3
+type		ltbl
+interval	20000
+rate            115200
+
+[color]
+name		red
+rgb		FF0000
+
+[color]
+name		green
+rgb		00FF00
+
+[color]
+name		blue
+rgb		0000FF
+
+[light]
+name		main
+color		red     device1 1
+color		green   device1 2
+color		blue    device1 3
+hscan		0 100
+vscan		0 100
+}}}
+
+{{{
+#two lights on a 12 channel momo device
+
+[global]
+interface	127.0.0.1
+
+[device]
+name 		device1
+output		/dev/ttyACM0
+channels	12
+type		momo
+interval	20000
+prefix          FF
+rate            19200
+
+[color]
+name		red
+rgb		FF0000
+
+[color]
+name		green
+rgb		00FF00
+
+[color]
+name		blue
+rgb		0000FF
+
+[light]
+name		right
+color		red 	device1 2
+color		green 	device1 4
+color		blue 	device1 6
+hscan		50 100
+vscan		0 100
+
+[light]
+name		left
+color		red     device1 1
+color		green   device1 3
+color		blue    device1 5
+hscan		0 50
+vscan		0 100
+}}}
