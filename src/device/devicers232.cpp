@@ -117,7 +117,7 @@ bool CDeviceRS232::WriteOutput()
     output = Clamp(output, 0, m_max);
 
     for (int j = 0; j < m_bytes; j++)
-      m_buff[m_prefix.size() + i * m_bytes + j] = (output >> ((m_bytes - j - 1) * 8)) & 0xFF;
+      m_buff[m_prefix.size() + static_cast<size_t>(i) * m_bytes + j] = (output >> ((m_bytes - j - 1) * 8)) & 0xFF;
   }
 
   //calculate checksum
